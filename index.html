@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Ball Blitz — Arcade Physics Football</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Exo+2:ital,wght@0,400;0,700;0,900;1,900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="./src/style.css">
+  </head>
+  <body>
+    <div id="wrapper">
+
+      <!-- MENU SCREEN -->
+      <div id="menu-screen" class="screen">
+        <h1>BALL BLITZ</h1>
+        <p class="subtitle">⚽ Arcade Physics Football</p>
+        <div class="selectors">
+          <div class="select-box">
+            <label>YOUR TEAM</label>
+            <select id="player-select"></select>
+          </div>
+          <div class="vs-divider">VS</div>
+          <div class="select-box">
+            <label>OPPONENT</label>
+            <select id="cpu-select"></select>
+          </div>
+        </div>
+        <button id="start-btn">⚽ KICK OFF</button>
+        <p class="hint">Drag the POWER slider during the game to control your ball's force</p>
+      </div>
+
+      <!-- GAME OVER SCREEN -->
+      <div id="gameover-screen" class="screen hidden">
+        <h2 id="gameover-title">FULL TIME!</h2>
+        <div id="final-score-display"></div>
+        <p id="final-score-text"></p>
+        <button id="restart-btn">⚽ PLAY AGAIN</button>
+      </div>
+
+      <!-- GAME AREA -->
+      <div id="game-area">
+        <div id="game-container"></div>
+
+        <div id="game-hud" class="hidden">
+          <div class="hud-row hud-main">
+            <div class="hud-team player-side">
+              <span id="hud-player-flag" class="hud-flag"></span>
+              <span id="hud-player-name" class="hud-name"></span>
+              <span id="player-score-val" class="hud-score">0</span>
+            </div>
+            <div class="hud-center">
+              <div class="hud-timer">⏱ <span id="time-val">60</span>s</div>
+            </div>
+            <div class="hud-team cpu-side">
+              <span id="cpu-score-val" class="hud-score">0</span>
+              <span id="hud-cpu-name" class="hud-name"></span>
+              <span id="hud-cpu-flag" class="hud-flag"></span>
+            </div>
+          </div>
+          <div class="hud-row hud-controls">
+            <span class="power-label">⚡ POWER:</span>
+            <input type="range" id="speed-slider" min="0.05" max="0.6" step="0.01" value="0.25">
+            <span class="power-hint">LOW ←→ HIGH</span>
+            <span id="controls-hint" class="controls-hint"></span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>
