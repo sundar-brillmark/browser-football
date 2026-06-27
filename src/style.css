@@ -6,12 +6,12 @@
 
 body {
   font-family: 'Exo 2', 'Segoe UI', sans-serif;
-  /* Dark navy base matching Fanorate's deep blue end */
   background: radial-gradient(ellipse at center, #0c0818 0%, #04020a 100%);
   display: flex;
   justify-content: center;
   align-items: center;
   min-height: 100vh;
+  min-height: 100dvh; /* accounts for mobile browser chrome */
   color: #fff;
   overflow: hidden;
 }
@@ -341,4 +341,43 @@ input[type="range"]::-moz-range-thumb {
 
 .hidden {
   display: none !important;
+}
+
+/* ===== FULLSCREEN BUTTON ===== */
+#fullscreen-btn {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  background: rgba(0, 0, 0, 0.55);
+  border: 1.5px solid rgba(218, 25, 30, 0.5);
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 30;
+  box-shadow: none;
+  letter-spacing: 0;
+  transition: background 0.2s, border-color 0.2s, box-shadow 0.2s;
+}
+
+#fullscreen-btn:hover {
+  background: rgba(218, 25, 30, 0.22);
+  border-color: rgba(218, 25, 30, 0.9);
+  box-shadow: 0 0 14px rgba(218, 25, 30, 0.35);
+  transform: none;
+}
+
+#fullscreen-btn:active {
+  transform: none;
+  box-shadow: none;
+}
+
+#fullscreen-btn svg {
+  width: 18px;
+  height: 18px;
+  pointer-events: none;
 }

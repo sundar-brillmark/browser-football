@@ -70,7 +70,7 @@
           </div>
         </div>
         <button id="start-btn">⚽ KICK OFF</button>
-        <p class="hint">Drag the POWER slider · Arrow Keys / WASD to boost on desktop · Tap canvas on mobile</p>
+        <p class="hint">Arrow Keys / WASD on desktop · Joystick on mobile · ⛶ for fullscreen</p>
       </div>
 
       <!-- GAME OVER SCREEN -->
@@ -109,6 +109,13 @@
           </div>
         </div>
       </div>
+
+      <!-- FULLSCREEN BUTTON — always on top of all screens -->
+      <button id="fullscreen-btn" title="Fullscreen" aria-label="Toggle fullscreen">
+        <svg id="fs-icon" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M1 6V1H6M12 1H17V6M17 12V17H12M6 17H1V12" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
 
     </div>
     <script type="module" src="./src/main.js"></script>

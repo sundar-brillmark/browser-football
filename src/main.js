@@ -222,12 +222,47 @@ const render = Render.create({
 // ============================================================
 function scaleGameToFit() {
   const wrapper = document.getElementById('wrapper');
-  const scale = Math.min(window.innerWidth / 800, window.innerHeight / 600, 1);
-  wrapper.style.transform      = `scale(${scale})`;
+  const isFs = !!(document.fullscreenElement || document.webkitFullscreenElement);
+  // Allow scale > 1 in fullscreen so the game fills the whole screen
+  const maxScale = isFs ? 4 : 1;
+  const scale = Math.min(window.innerWidth / 800, window.innerHeight / 600, maxScale);
+  wrapper.style.transform       = `scale(${scale})`;
   wrapper.style.transformOrigin = 'center center';
 }
 window.addEventListener('resize', scaleGameToFit);
+window.addEventListener('orientationchange', () => setTimeout(scaleGameToFit, 120));
 scaleGameToFit();
+
+// ============================================================
+// FULLSCREEN TOGGLE
+// ============================================================
+const FS_ENTER_SVG = `<svg viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M1 6V1H6M12 1H17V6M17 12V17H12M6 17H1V12" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+const FS_EXIT_SVG  = `<svg viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M7 1V7H1M11 1V7H17M17 11H11V17M7 17V11H1" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+
+const fsBtn = document.getElementById('fullscreen-btn');
+if (fsBtn) {
+  fsBtn.innerHTML = FS_ENTER_SVG;
+
+  fsBtn.addEventListener('click', () => {
+    const isFs = !!(document.fullscreenElement || document.webkitFullscreenElement);
+    if (!isFs) {
+      const req = document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen;
+      if (req) req.call(document.documentElement).catch(() => {});
+    } else {
+      const exit = document.exitFullscreen || document.webkitExitFullscreen;
+      if (exit) exit.call(document).catch(() => {});
+    }
+  });
+
+  function onFsChange() {
+    const isFs = !!(document.fullscreenElement || document.webkitFullscreenElement);
+    fsBtn.innerHTML = isFs ? FS_EXIT_SVG : FS_ENTER_SVG;
+    fsBtn.title     = isFs ? 'Exit Fullscreen' : 'Fullscreen';
+    scaleGameToFit();
+  }
+  document.addEventListener('fullscreenchange',       onFsChange);
+  document.addEventListener('webkitfullscreenchange', onFsChange);
+}
 
 // ============================================================
 // KEYBOARD + TOUCH INPUT
@@ -243,19 +278,19 @@ window.addEventListener('keydown', (e) => {
 }, { capture: true });
 window.addEventListener('keyup', (e) => { keys[e.key] = false; }, { capture: true });
 
-// Virtual joystick (touch devices only)
-const JOYSTICK_BASE = { x: 72, y: H - 78 };
-const JOYSTICK_R    = 54;   // outer ring radius
-const KNOB_R        = 21;   // thumb knob radius
-const MAX_KNOB_DIST = JOYSTICK_R - KNOB_R - 4;
+// Virtual joystick (floating — base appears where you press)
+const JOYSTICK_R    = 90;   // outer ring radius (canvas px)
+const KNOB_R        = 34;   // thumb knob radius
+const MAX_KNOB_DIST = JOYSTICK_R - KNOB_R - 5;
+// Activate zone: left half of canvas, any Y
+const JOYSTICK_ZONE_X = W * 0.5;
 
 const joystick = {
   active:  false,
   touchId: null,
-  kx: 72,        // knob x (canvas coords)
-  ky: H - 78,    // knob y
-  dx: 0,         // force direction × magnitude, -1..1
-  dy: 0,
+  bx: 0, by: 0,  // base position — set when touch starts
+  kx: 0, ky: 0,  // knob position
+  dx: 0, dy: 0,  // direction × magnitude, range -1..1
 };
 
 const isTouchDevice = navigator.maxTouchPoints > 0;
@@ -560,47 +595,80 @@ function drawGoalText(ctx) {
 function drawJoystick(ctx) {
   if (!isTouchDevice) return;
 
-  const { x: bx, y: by } = JOYSTICK_BASE;
+  if (!joystick.active) {
+    // Ghost hint — faint dashed circle in bottom-left to show the touch zone
+    ctx.save();
+    ctx.globalAlpha = 0.13;
+    ctx.beginPath();
+    ctx.arc(105, H - 108, 68, 0, Math.PI * 2);
+    ctx.strokeStyle = '#DA191E';
+    ctx.lineWidth = 2.5;
+    ctx.setLineDash([7, 6]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.font = 'bold 11px "Exo 2", sans-serif';
+    ctx.fillStyle = '#DA191E';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('STEER', 105, H - 108);
+    ctx.restore();
+    return;
+  }
+
+  const { bx, by } = joystick;
   ctx.save();
 
-  // Outer ring
+  // Outer ring fill + border
   ctx.beginPath();
   ctx.arc(bx, by, JOYSTICK_R, 0, Math.PI * 2);
-  ctx.fillStyle = 'rgba(255,255,255,0.06)';
+  ctx.fillStyle = 'rgba(0,0,0,0.38)';
   ctx.fill();
-  ctx.strokeStyle = joystick.active ? 'rgba(218,25,30,0.9)' : 'rgba(218,25,30,0.45)';
-  ctx.lineWidth = 2.5;
+  ctx.strokeStyle = 'rgba(218,25,30,0.9)';
+  ctx.lineWidth = 3.5;
+  ctx.stroke();
+
+  // Inner guide ring
+  ctx.beginPath();
+  ctx.arc(bx, by, JOYSTICK_R * 0.55, 0, Math.PI * 2);
+  ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+  ctx.lineWidth = 1.5;
   ctx.stroke();
 
   // Cardinal arrows
-  ctx.globalAlpha = 0.55;
-  ctx.fillStyle = '#DA191E';
-  ctx.font = 'bold 13px "Exo 2", sans-serif';
+  ctx.globalAlpha = 0.65;
+  ctx.fillStyle = '#FF6060';
+  ctx.font = 'bold 18px "Exo 2", sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  const ad = JOYSTICK_R - 13;
+  const ad = JOYSTICK_R - 20;
   ctx.fillText('▲', bx,      by - ad);
   ctx.fillText('▼', bx,      by + ad);
   ctx.fillText('◀', bx - ad, by);
   ctx.fillText('▶', bx + ad, by);
   ctx.globalAlpha = 1;
 
-  // Knob
+  // Knob glow
+  ctx.beginPath();
+  ctx.arc(joystick.kx, joystick.ky, KNOB_R + 8, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(218,25,30,0.18)';
+  ctx.fill();
+
+  // Knob body
   const knobGrad = ctx.createRadialGradient(
-    joystick.kx - 5, joystick.ky - 5, 2,
+    joystick.kx - 9, joystick.ky - 9, 3,
     joystick.kx, joystick.ky, KNOB_R
   );
-  knobGrad.addColorStop(0, '#FF5565');
+  knobGrad.addColorStop(0, '#FF7080');
   knobGrad.addColorStop(1, '#8B1020');
   ctx.beginPath();
   ctx.arc(joystick.kx, joystick.ky, KNOB_R, 0, Math.PI * 2);
   ctx.fillStyle = knobGrad;
-  ctx.shadowColor = 'rgba(218,25,30,0.8)';
-  ctx.shadowBlur  = joystick.active ? 16 : 6;
+  ctx.shadowColor = 'rgba(218,25,30,1)';
+  ctx.shadowBlur  = 22;
   ctx.fill();
   ctx.shadowBlur  = 0;
-  ctx.strokeStyle = 'rgba(255,255,255,0.55)';
-  ctx.lineWidth   = 2;
+  ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+  ctx.lineWidth   = 2.5;
   ctx.stroke();
 
   ctx.restore();
@@ -775,11 +843,11 @@ Events.on(engine, 'beforeUpdate', () => {
   if (keys['ArrowLeft']  || keys['a'] || keys['A']) Body.applyForce(player, player.position, { x: -BOOST, y: 0 });
   if (keys['ArrowRight'] || keys['d'] || keys['D']) Body.applyForce(player, player.position, { x:  BOOST, y: 0 });
 
-  // Joystick steering (mobile)
+  // Joystick steering — 2× stronger than keyboard so it always overrides auto-chase
   if (joystick.active) {
     Body.applyForce(player, player.position, {
-      x: joystick.dx * BOOST,
-      y: joystick.dy * BOOST,
+      x: joystick.dx * BOOST * 2,
+      y: joystick.dy * BOOST * 2,
     });
   }
 
@@ -932,42 +1000,42 @@ function getCanvasPos(touch) {
 }
 
 function updateJoystickKnob(pos) {
-  let dx = pos.x - JOYSTICK_BASE.x;
-  let dy = pos.y - JOYSTICK_BASE.y;
-  const dist  = Math.sqrt(dx * dx + dy * dy);
-  const ratio = dist > 0 ? Math.min(dist / MAX_KNOB_DIST, 1) : 0;
+  const dx   = pos.x - joystick.bx;
+  const dy   = pos.y - joystick.by;
+  const dist = Math.sqrt(dx * dx + dy * dy);
   if (dist > 0) {
-    joystick.dx = (dx / dist) * ratio;
-    joystick.dy = (dy / dist) * ratio;
-    joystick.kx = JOYSTICK_BASE.x + (dx / dist) * Math.min(dist, MAX_KNOB_DIST);
-    joystick.ky = JOYSTICK_BASE.y + (dy / dist) * Math.min(dist, MAX_KNOB_DIST);
+    const ratio  = Math.min(dist / MAX_KNOB_DIST, 1);
+    joystick.dx  = (dx / dist) * ratio;
+    joystick.dy  = (dy / dist) * ratio;
+    joystick.kx  = joystick.bx + (dx / dist) * Math.min(dist, MAX_KNOB_DIST);
+    joystick.ky  = joystick.by + (dy / dist) * Math.min(dist, MAX_KNOB_DIST);
   } else {
-    joystick.dx = joystick.dy = 0;
-    joystick.kx = JOYSTICK_BASE.x;
-    joystick.ky = JOYSTICK_BASE.y;
+    joystick.dx  = joystick.dy = 0;
+    joystick.kx  = joystick.bx;
+    joystick.ky  = joystick.by;
   }
 }
 
 function resetJoystick() {
   joystick.active  = false;
   joystick.touchId = null;
-  joystick.kx = JOYSTICK_BASE.x;
-  joystick.ky = JOYSTICK_BASE.y;
   joystick.dx = joystick.dy = 0;
 }
 
 canvas.addEventListener('touchstart', (e) => {
   e.preventDefault();
   for (const t of e.changedTouches) {
-    if (joystick.active) continue; // already tracking a finger
+    if (joystick.active) continue;
     const pos = getCanvasPos(t);
-    const dx  = pos.x - JOYSTICK_BASE.x;
-    const dy  = pos.y - JOYSTICK_BASE.y;
-    // Accept touch anywhere in or near the joystick base
-    if (Math.sqrt(dx * dx + dy * dy) < JOYSTICK_R + 28) {
+    // Activate anywhere in the left half of the canvas
+    if (pos.x < JOYSTICK_ZONE_X) {
       joystick.active  = true;
       joystick.touchId = t.identifier;
-      updateJoystickKnob(pos);
+      joystick.bx = pos.x;
+      joystick.by = pos.y;
+      joystick.kx = pos.x;
+      joystick.ky = pos.y;
+      joystick.dx = joystick.dy = 0;
     }
   }
 }, { passive: false });
@@ -997,6 +1065,6 @@ canvas.addEventListener('touchcancel', (e) => {
 const hintEl = document.getElementById('controls-hint');
 if (hintEl) {
   hintEl.innerText = isTouchDevice
-    ? 'JOYSTICK (bottom-left) to steer · SLIDER to adjust power'
+    ? 'PRESS LEFT SIDE to pop joystick · drag to steer · SLIDER = power'
     : 'ARROW KEYS / WASD to boost · SLIDER to adjust power';
 }
