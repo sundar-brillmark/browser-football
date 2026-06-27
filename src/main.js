@@ -243,7 +243,22 @@ window.addEventListener('keydown', (e) => {
 }, { capture: true });
 window.addEventListener('keyup', (e) => { keys[e.key] = false; }, { capture: true });
 
-let touchTarget = null;
+// Virtual joystick (touch devices only)
+const JOYSTICK_BASE = { x: 72, y: H - 78 };
+const JOYSTICK_R    = 54;   // outer ring radius
+const KNOB_R        = 21;   // thumb knob radius
+const MAX_KNOB_DIST = JOYSTICK_R - KNOB_R - 4;
+
+const joystick = {
+  active:  false,
+  touchId: null,
+  kx: 72,        // knob x (canvas coords)
+  ky: H - 78,    // knob y
+  dx: 0,         // force direction × magnitude, -1..1
+  dy: 0,
+};
+
+const isTouchDevice = navigator.maxTouchPoints > 0;
 
 // Touch events are added after the canvas exists (end of file)
 
@@ -411,6 +426,37 @@ function drawGoal(ctx, isScoring) {
   ctx.restore();
 }
 
+// ============================================================
+// EMOJI OFFSCREEN CACHE
+// fillText emoji is unreliable on mobile canvas (iOS/Android).
+// Pre-rendering to an offscreen canvas + drawImage is bulletproof.
+// ============================================================
+const emojiCache = new Map();
+
+function getEmojiCanvas(flag) {
+  if (emojiCache.has(flag)) return emojiCache.get(flag);
+
+  const size = BALL_R * 3; // generous padding so tall flags aren't clipped
+  const off  = document.createElement('canvas');
+  off.width  = size;
+  off.height = size;
+  const c    = off.getContext('2d');
+
+  // Explicit emoji font stack maximises mobile compatibility
+  c.font         = `${Math.floor(BALL_R * 1.25)}px 'Apple Color Emoji','Segoe UI Emoji','Noto Color Emoji','Segoe UI Symbol',sans-serif`;
+  c.textAlign    = 'center';
+  c.textBaseline = 'middle';
+  c.fillText(flag, size / 2, size / 2 + 1);
+
+  emojiCache.set(flag, off);
+  return off;
+}
+
+function warmEmojiCache() {
+  getEmojiCanvas(playerTeam.flag);
+  getEmojiCanvas(cpuTeam.flag);
+}
+
 function drawBall(ctx, body, team) {
   const { x, y } = body.position;
 
@@ -460,15 +506,14 @@ function drawBall(ctx, body, team) {
   ctx.fillStyle = hlGrad;
   ctx.fill();
 
-  // Flag emoji (rotates with physics body)
+  // Flag emoji — rotates with ball, drawn from offscreen cache for mobile reliability
+  const emojiOff  = getEmojiCanvas(team.flag);
+  const emojiSize = emojiOff.width;
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate(body.angle);
-  ctx.font         = `${BALL_R * 1.1}px sans-serif`;
-  ctx.textAlign    = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.shadowBlur   = 0;
-  ctx.fillText(team.flag, 0, 1);
+  ctx.shadowBlur = 0;
+  ctx.drawImage(emojiOff, -emojiSize / 2, -emojiSize / 2, emojiSize, emojiSize);
   ctx.restore();
 
   ctx.restore();
@@ -505,6 +550,58 @@ function drawGoalText(ctx) {
   ctx.font      = '700 20px "Exo 2", sans-serif';
   ctx.fillStyle = '#FFD700';
   ctx.fillText(`${scorerName.toUpperCase()} SCORES!`, 0, 56);
+
+  ctx.restore();
+}
+
+// ============================================================
+// VIRTUAL JOYSTICK DRAW
+// ============================================================
+function drawJoystick(ctx) {
+  if (!isTouchDevice) return;
+
+  const { x: bx, y: by } = JOYSTICK_BASE;
+  ctx.save();
+
+  // Outer ring
+  ctx.beginPath();
+  ctx.arc(bx, by, JOYSTICK_R, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(255,255,255,0.06)';
+  ctx.fill();
+  ctx.strokeStyle = joystick.active ? 'rgba(218,25,30,0.9)' : 'rgba(218,25,30,0.45)';
+  ctx.lineWidth = 2.5;
+  ctx.stroke();
+
+  // Cardinal arrows
+  ctx.globalAlpha = 0.55;
+  ctx.fillStyle = '#DA191E';
+  ctx.font = 'bold 13px "Exo 2", sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const ad = JOYSTICK_R - 13;
+  ctx.fillText('▲', bx,      by - ad);
+  ctx.fillText('▼', bx,      by + ad);
+  ctx.fillText('◀', bx - ad, by);
+  ctx.fillText('▶', bx + ad, by);
+  ctx.globalAlpha = 1;
+
+  // Knob
+  const knobGrad = ctx.createRadialGradient(
+    joystick.kx - 5, joystick.ky - 5, 2,
+    joystick.kx, joystick.ky, KNOB_R
+  );
+  knobGrad.addColorStop(0, '#FF5565');
+  knobGrad.addColorStop(1, '#8B1020');
+  ctx.beginPath();
+  ctx.arc(joystick.kx, joystick.ky, KNOB_R, 0, Math.PI * 2);
+  ctx.fillStyle = knobGrad;
+  ctx.shadowColor = 'rgba(218,25,30,0.8)';
+  ctx.shadowBlur  = joystick.active ? 16 : 6;
+  ctx.fill();
+  ctx.shadowBlur  = 0;
+  ctx.strokeStyle = 'rgba(255,255,255,0.55)';
+  ctx.lineWidth   = 2;
+  ctx.stroke();
 
   ctx.restore();
 }
@@ -553,6 +650,9 @@ Events.on(render, 'afterRender', () => {
   // Balls
   drawBall(ctx, player, playerTeam);
   drawBall(ctx, computer, cpuTeam);
+
+  // Virtual joystick (touch only)
+  drawJoystick(ctx);
 
   // Goal text overlay
   drawGoalText(ctx);
@@ -675,17 +775,12 @@ Events.on(engine, 'beforeUpdate', () => {
   if (keys['ArrowLeft']  || keys['a'] || keys['A']) Body.applyForce(player, player.position, { x: -BOOST, y: 0 });
   if (keys['ArrowRight'] || keys['d'] || keys['D']) Body.applyForce(player, player.position, { x:  BOOST, y: 0 });
 
-  // Touch steering — drive ball toward finger position
-  if (touchTarget) {
-    const tdx   = touchTarget.x - player.position.x;
-    const tdy   = touchTarget.y - player.position.y;
-    const tdist = Math.sqrt(tdx * tdx + tdy * tdy);
-    if (tdist > 5) {
-      Body.applyForce(player, player.position, {
-        x: (tdx / tdist) * pForce * 1.8,
-        y: (tdy / tdist) * pForce * 1.8,
-      });
-    }
+  // Joystick steering (mobile)
+  if (joystick.active) {
+    Body.applyForce(player, player.position, {
+      x: joystick.dx * BOOST,
+      y: joystick.dy * BOOST,
+    });
   }
 
   // CPU auto-chase: pursues player with opposite wobble
@@ -749,6 +844,7 @@ document.getElementById('restart-btn').addEventListener('click', () => {
 function startGame() {
   playerTeam = teams[parseInt(playerSelect.value)];
   cpuTeam    = teams[parseInt(cpuSelect.value)];
+  emojiCache.clear(); // rebuild cache for newly selected team flags
 
   document.getElementById('hud-player-flag').innerText = playerTeam.flag;
   document.getElementById('hud-player-name').innerText = playerTeam.name.toUpperCase();
@@ -768,6 +864,10 @@ function startGame() {
   speedSlider.value = 0.25;
   particles.length  = 0;
   goalCooldown      = false;
+
+  // Pre-render emoji to offscreen canvases before the first frame
+  warmEmojiCache();
+
   // Give the canvas focus so keyboard events aren't swallowed by form elements
   render.canvas.focus();
   goalFlash         = 0;
@@ -824,7 +924,6 @@ canvas.setAttribute('tabindex', '0');
 canvas.style.outline = 'none'; // No visible focus ring
 
 function getCanvasPos(touch) {
-  // getBoundingClientRect accounts for CSS scale transform
   const rect = canvas.getBoundingClientRect();
   return {
     x: (touch.clientX - rect.left) / rect.width  * W,
@@ -832,25 +931,72 @@ function getCanvasPos(touch) {
   };
 }
 
+function updateJoystickKnob(pos) {
+  let dx = pos.x - JOYSTICK_BASE.x;
+  let dy = pos.y - JOYSTICK_BASE.y;
+  const dist  = Math.sqrt(dx * dx + dy * dy);
+  const ratio = dist > 0 ? Math.min(dist / MAX_KNOB_DIST, 1) : 0;
+  if (dist > 0) {
+    joystick.dx = (dx / dist) * ratio;
+    joystick.dy = (dy / dist) * ratio;
+    joystick.kx = JOYSTICK_BASE.x + (dx / dist) * Math.min(dist, MAX_KNOB_DIST);
+    joystick.ky = JOYSTICK_BASE.y + (dy / dist) * Math.min(dist, MAX_KNOB_DIST);
+  } else {
+    joystick.dx = joystick.dy = 0;
+    joystick.kx = JOYSTICK_BASE.x;
+    joystick.ky = JOYSTICK_BASE.y;
+  }
+}
+
+function resetJoystick() {
+  joystick.active  = false;
+  joystick.touchId = null;
+  joystick.kx = JOYSTICK_BASE.x;
+  joystick.ky = JOYSTICK_BASE.y;
+  joystick.dx = joystick.dy = 0;
+}
+
 canvas.addEventListener('touchstart', (e) => {
   e.preventDefault();
-  touchTarget = getCanvasPos(e.touches[0]);
+  for (const t of e.changedTouches) {
+    if (joystick.active) continue; // already tracking a finger
+    const pos = getCanvasPos(t);
+    const dx  = pos.x - JOYSTICK_BASE.x;
+    const dy  = pos.y - JOYSTICK_BASE.y;
+    // Accept touch anywhere in or near the joystick base
+    if (Math.sqrt(dx * dx + dy * dy) < JOYSTICK_R + 28) {
+      joystick.active  = true;
+      joystick.touchId = t.identifier;
+      updateJoystickKnob(pos);
+    }
+  }
 }, { passive: false });
 
 canvas.addEventListener('touchmove', (e) => {
   e.preventDefault();
-  touchTarget = getCanvasPos(e.touches[0]);
+  for (const t of e.changedTouches) {
+    if (t.identifier === joystick.touchId) {
+      updateJoystickKnob(getCanvasPos(t));
+    }
+  }
 }, { passive: false });
 
-canvas.addEventListener('touchend', () => {
-  touchTarget = null;
+canvas.addEventListener('touchend', (e) => {
+  for (const t of e.changedTouches) {
+    if (t.identifier === joystick.touchId) resetJoystick();
+  }
 }, { passive: false });
 
-// Show correct controls hint once (detect touch capability)
-const isTouchDevice = navigator.maxTouchPoints > 0;
+canvas.addEventListener('touchcancel', (e) => {
+  for (const t of e.changedTouches) {
+    if (t.identifier === joystick.touchId) resetJoystick();
+  }
+}, { passive: false });
+
+// Controls hint
 const hintEl = document.getElementById('controls-hint');
 if (hintEl) {
   hintEl.innerText = isTouchDevice
-    ? 'TAP & DRAG CANVAS to steer · SLIDER to adjust power'
+    ? 'JOYSTICK (bottom-left) to steer · SLIDER to adjust power'
     : 'ARROW KEYS / WASD to boost · SLIDER to adjust power';
 }
